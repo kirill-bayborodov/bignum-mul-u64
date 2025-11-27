@@ -1,14 +1,14 @@
 /**
- * @file    bench_bignum_template_mt.c
- * @brief   Многопоточный микробенчмарк для профилирования bignum_template.
+ * @file    bench_bignum_mul_u64_mt.c
+ * @brief   Многопоточный микробенчмарк для профилирования bignum_mul_u64.
  * @author  git@bayborodov.com
  * @version 1.0.0
- * @date    03.10.2025
+ * @date    27.11.2025
  *
  * @details
  *   Для чистоты измерений все случайные данные генерируются заранее
  *   в основном потоке и передаются в рабочие потоки. Каждый поток
- *   выполняет свой набор вызовов bignum_template, используя
+ *   выполняет свой набор вызовов bignum_mul_u64, используя
  *   общий пул предварительно сгенерированных данных.
  *
  * @history
@@ -18,12 +18,12 @@
  *
  * # Сборка
  * gcc -g -O2 -I include -no-pie -fno-omit-frame-pointer -pthread \
- *   benchmarks/bench_bignum_template_mt.c build/bignum_template.o \
- *   -o bin/bench_bignum_template_mt
+ *   benchmarks/bench_bignum_mul_u64_mt.c build/bignum_mul_u64.o \
+ *   -o bin/bench_bignum_mul_u64_mt
  *
  * # Запуск perf
- * /usr/local/bin/perf record -F 9999 -o benchmarks/reports/report_bench_bignum_template_mt -g -- \
- *   bin/bench_bignum_template_mt
+ * /usr/local/bin/perf record -F 9999 -o benchmarks/reports/report_bench_bignum_mul_u64_mt -g -- \
+ *   bin/bench_bignum_mul_u64_mt
  */
 
 #include <stdio.h>
@@ -31,8 +31,9 @@
 #include <stdint.h>
 #include <time.h>
 #include <pthread.h>
+#include <string.h>
 #include <bignum.h>
-#include "bignum_template.h"
+#include "bignum_mul_u64.h"
 
 // --- Локальные определения для компиляции ---
 #define BIGNUM_CAPACITY 32
@@ -53,8 +54,9 @@
 typedef struct {
     unsigned thread_id;
     unsigned iters;
-    const bignum_t* sources; // Указатель на общий пул исходных чисел
-    const size_t* shifts;    // Указатель на общий пул сдвигов
+    const bignum_t* res; // Указатель на общий пул результирующих чисел
+    const bignum_t* a; // Указатель на общий пул исходных чисел
+    const uint64_t* b;    // Указатель на общий пул множителей
     unsigned data_count;     // Размер пула
 } thread_arg_t;
 
@@ -79,12 +81,13 @@ static void* thread_func(void *arg) {
         // Смещаем индекс на thread_id, чтобы потоки реже работали с одними и теми же данными
         unsigned data_idx = (i + t->thread_id) % t->data_count;
 
-        bignum_t dst = t->sources[data_idx];
-        size_t shift = t->shifts[data_idx];
+        bignum_t res_dst = {0};
+        bignum_t a_dst = t->a[data_idx];
+        uint64_t b_dst = t->b[data_idx];
 
-        bignum_template(&dst, shift);
+        bignum_mul_u64(&res_dst, &a_dst, b_dst);
 
-        if (dst.len == 0xDEADBEEF) {
+        if (a_dst.len == 0xDEADBEEF) {
             return (void*)1;
         }
     }
@@ -94,18 +97,20 @@ static void* thread_func(void *arg) {
 int main(void) {
     // --- Фаза 1: Предварительная генерация данных в основном потоке ---
     printf("Pregenerating %u data sets for %u threads...\n", PREGEN_DATA_COUNT, THREAD_COUNT);
-    bignum_t* sources = malloc(sizeof(bignum_t) * PREGEN_DATA_COUNT);
-    size_t* shifts = malloc(sizeof(size_t) * PREGEN_DATA_COUNT);
+    bignum_t* res = malloc(sizeof(bignum_t) * PREGEN_DATA_COUNT);
+    bignum_t* a = malloc(sizeof(bignum_t) * PREGEN_DATA_COUNT);
+    uint64_t* b = malloc(sizeof(uint64_t) * PREGEN_DATA_COUNT);
 
-    if (!sources || !shifts) {
+    if (!a || !b || !res) {
         perror("Failed to allocate memory for test data");
         return 1;
     }
 
+    memset(&res, 0, sizeof(res));
     srand((unsigned)time(NULL));
     for (unsigned i = 0; i < PREGEN_DATA_COUNT; ++i) {
-        init_random_bignum(&sources[i]);
-        shifts[i] = (size_t)(rand() % MAX_SHIFT);
+        init_random_bignum(&a[i]);
+        b[i] = (uint64_t)(rand() % MAX_SHIFT);
     }
 
     // --- Фаза 2: Запуск потоков и профилирование ---
@@ -116,13 +121,15 @@ int main(void) {
     for (unsigned i = 0; i < THREAD_COUNT; ++i) {
         args[i].thread_id = i;
         args[i].iters     = ITER_PER_THREAD;
-        args[i].sources   = sources;
-        args[i].shifts    = shifts;
+        args[i].res = res;
+        args[i].a   = a;
+        args[i].b   = b;
         args[i].data_count = PREGEN_DATA_COUNT;
         if (pthread_create(&threads[i], NULL, thread_func, &args[i]) != 0) {
             perror("pthread_create");
-            free(sources);
-            free(shifts);
+            free(res);
+            free(a);
+            free(b);
             return 1;
         }
     }
@@ -138,8 +145,9 @@ int main(void) {
     printf("Benchmark finished.\n");
 
     // --- Фаза 3: Очистка ---
-    free(sources);
-    free(shifts);
+    free(res);
+    free(a);
+    free(b);
 
     return 0;
 }
