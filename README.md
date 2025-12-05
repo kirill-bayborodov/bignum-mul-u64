@@ -6,8 +6,8 @@
 
 Big-number multiplication-by-64-bit-integer (u64) module for the bignum‑lib project — provides bignum_mul_u64(res, a, b) which multiplies a normalized bignum_t by a uint64_t multiplier, stores the normalized product in res (may alias a), and returns BIGNUM_MUL_U64_SUCCESS, BIGNUM_MUL_U64_ERROR_NULL_ARG, or BIGNUM_MUL_U64_ERROR_OVERFLOW if res capacity is insufficient.
 
-`bignum-mul-u64` is a high-performance, standalone module for performing a logical template on an arbitrary-precision integer (`bignum_t`).
-A highly optimized x86-64 assembly implementation of a bignum template operation, designed for performance-critical applications. 
+`bignum-mul-u64` is a high-performance, standalone module for performing a multiplies a large number (bignum_t) by a 64-bit integer. (`bignum_t`).
+A highly optimized x86-64 assembly implementation of a bignum multiply operation, designed for performance-critical applications. 
 
 ## Distribution
 
